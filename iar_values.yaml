@@ -1,0 +1,191 @@
+# Default values for falcon-image-analyzer.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+daemonset:
+  enabled: false
+
+deployment:
+  enabled: false
+
+# override this value if needed
+# default to 500 as kubectl
+watcher:
+  listPageSize: 500
+
+# Do not override anywhere in values - Always 1 for Deployment. NA for daemonset
+replicaCount: 1
+image:
+  repository: registry.crowdstrike.com/falcon-imageanalyzer/us-1/release/falcon-imageanalyzer
+  # Overrides the image tag. In general, tags should not be used (including semver tags or `latest`). This variable is provided for those
+  # who have yet to move off of using tags. The sha256 digest should be used in place of tags for increased security and image immutability.
+  tag:
+  # Setting a digest will override any tag and should be used instead of tags.
+  #
+  # Example digest variable configuration:
+  # digest: sha256:ffdc91f66ef8570bd7612cf19145563a787f552656f5eec43cd80ef9caca0398
+  digest:
+  pullPolicy: Always
+
+  # use this to refer to an existing secret in the namespace falcon-image-analyzer
+  pullSecret:
+
+  # Value must be base64. This setting conflicts with image.pullSecret
+  # The base64 encoded string of the docker config json for the pull secret can be
+  # gotten through:
+  # $ cat ~/.docker/config.json | base64 -
+  registryConfigJSON:
+
+  envFrom:
+    - configMapRef:
+        name: agent-config
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Annotations to add to the service account
+  name: ""
+  annotations: {}
+
+volumeMounts:
+  - mountPath: /tmp
+    name: tmp-volume
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+nodeSelector: {}
+
+resources: {}
+
+tolerations: []
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/os
+          operator: In
+          values:
+            - linux
+
+priorityClassName: ""
+
+  # For AKS without the pulltoken option
+azure:
+  enabled: false
+
+  # Path to the Kubernetes Azure config file on worker nodes
+  azureConfig: /etc/kubernetes/azure.json
+
+# GCP GKE workload identity init container
+gcp:
+  enabled: false
+
+exclusions:
+  # provide a comma separate list of name spaces that you want to be
+  # excluded from IAR scanning.
+  # Note that all pods will be excluded.
+  # Use this param when you install IAR on a cluster that already has pods running and want to be excluded
+  # For excluding only specific pods or excluding namespaces AFTER iar has been installed , please refer to README
+  # For e.g.
+  #  exclusions:
+  #    namespace: "ns1,ns2"
+  namespace: ""
+
+  # provide a comma separate list of
+  # registries ( without transport http/https:// ) to be excluded
+  # from IAR scanning.
+  # Note that any pods running any image with the registry will be excluded
+  # Use this param when you install IAR on a cluster that already has pods running and want to be excluded
+  # for E.g.
+  #   exclusions:
+  #    registry: "index.docker.io,my.private.registry,localhost,localhost:1234"
+  registry: ""
+
+
+# set this to true will bypass the kubernetes network and use the node/host network. This is needed in some
+# setups where proxy rules are strict and if we IAR to make calls especially for private registry/auth via the host.
+# NOTE That setting this to true will also set the dnsPolicy: "ClusterFirstWithHostNet"
+hostNetwork: false
+
+# Define ImageAnalyzer POD DNS Policy, defaults to "ClusterFirstWithHostNet" when hostNetwork = true
+dnsPolicy:
+
+# Use this param to provide the comma separated registry secrets of the form namsepace1:secretname1,namespace:secret2
+# each secret should be of type docker-registry for each of the private registry that is used.
+# for e.g.  a docker-registry secret can be created as below
+#  kubectl create secret docker-registry regcred \
+#  --docker-server=my-artifactory.jfrog.io \
+#  --docker-username=read-only \
+#  --docker-password=my-super-secret-pass \
+#  --docker-email=johndoe@example.com  -n my-app-ns
+#
+# use the above secret as "my-app-ns:regcred"
+privateRegistries:
+  credentials: ""
+
+# This is a mandatory mount for both deployment and daemon set.
+# this is used as a tmp working space for image storage.
+# adjust this space to any comfortable value. The max Size should be equals
+# to the largest image possible to run in the container.
+# for e.g. if the largest possible image is in the range of 1-4g put 4Gi as the value.
+volumes:
+  - name: tmp-volume
+    emptyDir:
+      sizeLimit: 20Gi
+
+
+# use this field to set the output terminal of logs
+# 1 = stdout ( some cloud providers like GCP assume any output on stderr to be critical err and display on console )  .
+# 2 = stderr/default ( stderr is the normal output for logs )
+# any other value will be defaulted to stderr
+# https://stackoverflow.com/questions/4919093/should-i-log-messages-to-stderr-or-stdout/4919110#4919110 )
+
+log:
+  output: 2
+
+
+# Set this flag to true to send scan error stats to cs cloud.
+# These events can be searched in investigate>events / advanced events search
+# note that if true,  agent will send an error for image for first time only.
+# Repeated errors for same images will not be sent to preserve network footprint
+scanStats:
+  enabled: false
+
+crowdstrikeConfig:
+  clusterName: ""
+
+  # These are special Kubernetes SDK Verbose Logs. Helpful for troubleshooting kube API.
+  # Only Enable for extreme troubleshooting.
+  enableKlogs: "false"
+
+
+  enableDebug: "false"
+  clientID: ""
+  clientSecret: ""
+  cid: ""
+
+  # Use the value for the crowdstrike Artifactory
+  # Token retrieved by calling container-security
+  # /entities/image-registry-credentials/v1
+  dockerAPIToken: ""
+
+  # Use this value if you have an existing secret
+  # defined in your k8s that may contain secrets
+  # for falcon api client id and pw
+  existingSecret: ""
+  agentRegion: "autodiscovery"
+  agentRuntime: ""
+  agentRuntimeSocket: ""
+  agentMaxConsumerThreads: "1"
+
+proxyConfig:
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  NO_PROXY: ""
