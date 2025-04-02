@@ -1,0 +1,30 @@
+<style>
+.helm-command {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+    font-family: monospace;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    line-height: 1.5;
+    max-width: 100%;
+}
+
+.bg-light {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+pre {
+    margin-bottom: 0;
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
+code {
+    display: block;
+    word-wrap: break-word;
+}
+</style>

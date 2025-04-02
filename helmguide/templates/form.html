@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <form method="POST" action="{{ url_for('main.generate_helm_commands') }}">
+        <!-- Deployment Selection -->
+        <div class="mb-4">
+            <h4>Select Components to Deploy:</h4>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="deploy_sensor" name="deploy_sensor" checked>
+                <label class="form-check-label" for="deploy_sensor">
+                    Falcon Sensor
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="deploy_kac" name="deploy_kac">
+                <label class="form-check-label" for="deploy_kac">
+                    Kubernetes Admission Controller
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="deploy_iar" name="deploy_iar">
+                <label class="form-check-label" for="deploy_iar">
+                    Image Assessment at Runtime
+                </label>
+            </div>
+        </div>
+
+        <!-- Common Fields -->
+        <div class="mb-3">
+            <label for="client_id" class="form-label">Client ID:</label>
+            <input type="text" class="form-control" id="client_id" name="client_id" required>
+        </div>
+        
+        <div class="mb-3">
+            <label for="client_secret" class="form-label">Client Secret:</label>
+            <input type="password" class="form-control" id="client_secret" name="client_secret" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="environment" class="form-label">Environment:</label>
+            <select class="form-control" id="environment" name="environment">
+                {% for env in environments %}
+                <option value="{{ env }}">{{ env }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- IAR Configuration Fields -->
+        <div id="iar-config" style="display: none;">
+            <h4 class="mt-4">IAR Configuration</h4>
+            
+            <div class="mb-3">
+                <label for="cluster_name" class="form-label">Cluster Name:</label>
+                <input type="text" class="form-control" id="cluster_name" name="cluster_name">
+            </div>
+
+            <div class="mb-3">
+                <label for="agent_region" class="form-label">Agent Region:</label>
+                <select class="form-control" id="agent_region" name="agent_region">
+                    <option value="us-1">US-1</option>
+                    <option value="us-2">US-2</option>
+                    <option value="eu-1">EU-1</option>
+                    <option value="gov-1">GOV-1</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="cloud_provider" class="form-label">Cloud Provider:</label>
+                <select class="form-control" id="cloud_provider" name="cloud_provider">
+                    <option value="aws">AWS</option>
+                    <option value="azure">Azure</option>
+                    <option value="gcp">GCP</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Advanced Options -->
+        <div class="mt-4">
+            <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" 
+                    data-bs-target="#advancedOptions" aria-expanded="false" 
+                    aria-controls="advancedOptions">
+                Advanced Options ▼
+            </button>
+        </div>
+
+        <div class="collapse mt-3" id="advancedOptions">
+            <div class="card card-body">
+                <h4>Custom Registry Configuration</h4>
+                
+                <!-- Common Registry Settings -->
+                <div class="mb-3">
+                    <label for="custom_registry" class="form-label">Registry URL:</label>
+                    <input type="text" class="form-control" id="custom_registry" name="custom_registry" 
+                           placeholder="e.g., registry.example.com">
+                </div>
+
+                <div class="mb-3">
+                    <label for="custom_repo" class="form-label">Repository Name:</label>
+                    <input type="text" class="form-control" id="custom_repo" name="custom_repo" 
+                           placeholder="e.g., crowdstrike">
+                </div>
+
+                <!-- Dynamic Tag Inputs -->
+                <div id="customTags">
+                    <!-- Sensor tag -->
+                    <div class="mb-3 custom-tag-input" id="sensor-tag-div" style="display: none;">
+                        <label for="sensor_tag" class="form-label">Falcon Sensor Tag:</label>
+                        <input type="text" class="form-control" id="sensor_tag" name="sensor_tag" 
+                               value="falcon-sensor">
+                    </div>
+
+                    <!-- KAC tag -->
+                    <div class="mb-3 custom-tag-input" id="kac-tag-div" style="display: none;">
+                        <label for="kac_tag" class="form-label">KAC Tag:</label>
+                        <input type="text" class="form-control" id="kac_tag" name="kac_tag" 
+                               value="falcon-kac">
+                    </div>
+
+                    <!-- IAR tag -->
+                    <div class="mb-3 custom-tag-input" id="iar-tag-div" style="display: none;">
+                        <label for="iar_tag" class="form-label">IAR Tag:</label>
+                        <input type="text" class="form-control" id="iar_tag" name="iar_tag" 
+                               value="falcon-iar">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3">Generate Commands</button>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // IAR Configuration Toggle
+    const iarCheckbox = document.getElementById('deploy_iar');
+    const iarConfig = document.getElementById('iar-config');
+    const iarFields = iarConfig.querySelectorAll('input, select');
+    
+    function toggleIarConfig() {
+        const isIarSelected = iarCheckbox.checked;
+        iarConfig.style.display = isIarSelected ? 'block' : 'none';
+        iarFields.forEach(field => {
+            field.required = isIarSelected;
+        });
+    }
+    
+    iarCheckbox.addEventListener('change', toggleIarConfig);
+    toggleIarConfig();
+
+    // Custom Tags Toggle
+    const sensorCheckbox = document.getElementById('deploy_sensor');
+    const kacCheckbox = document.getElementById('deploy_kac');
+    
+    const sensorTagDiv = document.getElementById('sensor-tag-div');
+    const kacTagDiv = document.getElementById('kac-tag-div');
+    const iarTagDiv = document.getElementById('iar-tag-div');
+
+    function updateTagInputs() {
+        sensorTagDiv.style.display = sensorCheckbox.checked ? 'block' : 'none';
+        kacTagDiv.style.display = kacCheckbox.checked ? 'block' : 'none';
+        iarTagDiv.style.display = iarCheckbox.checked ? 'block' : 'none';
+    }
+
+    // Add event listeners for component checkboxes
+    sensorCheckbox.addEventListener('change', updateTagInputs);
+    kacCheckbox.addEventListener('change', updateTagInputs);
+    iarCheckbox.addEventListener('change', updateTagInputs);
+
+    // Initial state
+    updateTagInputs();
+});
+</script>
+{% endblock %}
