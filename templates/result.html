@@ -1,136 +1,68 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container">
-    {% if using_custom_registry %}
-    <div class="mb-5">
-        <h2>Image Copy Commands</h2>
-        <p class="text-muted mb-4">Run these commands first to copy images to your private registry:</p>
-        
-        {% if copy_commands.sensor %}
-        <div class="command-section mb-4">
-            <h4>Falcon Sensor Image Copy</h4>
-            <div class="bg-light p-3 rounded">
-                <pre><code class="helm-command">{{ copy_commands.sensor }}</code></pre>
-                <button class="btn btn-secondary mt-2" onclick="copyCommand(this)">Copy Command</button>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if copy_commands.kac %}
-        <div class="command-section mb-4">
-            <h4>KAC Image Copy</h4>
-            <div class="bg-light p-3 rounded">
-                <pre><code class="helm-command">{{ copy_commands.kac }}</code></pre>
-                <button class="btn btn-secondary mt-2" onclick="copyCommand(this)">Copy Command</button>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if copy_commands.iar %}
-        <div class="command-section mb-4">
-            <h4>IAR Image Copy</h4>
-            <div class="bg-light p-3 rounded">
-                <pre><code class="helm-command">{{ copy_commands.iar }}</code></pre>
-                <button class="btn btn-secondary mt-2" onclick="copyCommand(this)">Copy Command</button>
-            </div>
-        </div>
-        {% endif %}
-
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle"></i> After running the copy commands above, proceed with the Helm installation commands below.
-        </div>
+    <h2>{% if is_uninstall %}Uninstall{% else %}Deployment{% endif %} Command</h2>
+    <div class="helm-command">
+        <pre><code>{{ command }}</code></pre>
+        <button onclick="copyToClipboard(this)" data-command="{{ command }}">Copy</button>
     </div>
-    {% endif %}
-
-    <h2>Helm Installation Commands</h2>
     
-    {% if commands.sensor %}
-    <!-- Falcon Sensor Command -->
-    <div class="command-section mb-4">
-        <h3>Falcon Sensor</h3>
-        <div class="bg-light p-3 rounded">
-            <pre><code class="helm-command">{{ commands.sensor }}</code></pre>
-            <button class="btn btn-secondary mt-2" onclick="copyCommand(this)">Copy Command</button>
-        </div>
+    <div class="instructions">
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Copy the command above</li>
+            {% if is_uninstall %}
+            <li>Run it in your terminal with kubectl access to your cluster</li>
+            <li>This will remove all Falcon components from your cluster:
+                <ul>
+                    <li>Falcon Sensor (if installed)</li>
+                    <li>Falcon Container Sensor (if installed)</li>
+                    <li>Kubernetes Admission Controller (if installed)</li>
+                    <li>Image Assessment at Runtime (if installed)</li>
+                    <li>All associated namespaces will be removed</li>
+                </ul>
+            </li>
+            {% elif 'custom-registry' in command %}
+            <li>Ensure you have:
+                <ul>
+                    <li>A container runtime installed (docker, podman, or skopeo)</li>
+                    <li>Access to your registry (run appropriate login command first)</li>
+                    <li>kubectl access to your cluster</li>
+                </ul>
+            </li>
+            <li>Run the command in your terminal. The script will:
+                <ul>
+                    <li>Copy Falcon images to your registry (requires container runtime)</li>
+                    <li>Deploy components using your registry</li>
+                    <li>Create required namespaces</li>
+                </ul>
+            </li>
+            {% else %}
+            <li>Run it in your terminal with kubectl access to your cluster</li>
+            <li>The script will:
+                <ul>
+                    <li>Retrieve necessary credentials and tokens</li>
+                    <li>Deploy selected components using Helm</li>
+                    <li>Create required namespaces</li>
+                </ul>
+            </li>
+            {% endif %}
+        </ol>
     </div>
-    {% endif %}
-
-    {% if commands.kac %}
-    <!-- KAC Command -->
-    <div class="command-section mb-4">
-        <h3>Kubernetes Admission Controller</h3>
-        <div class="bg-light p-3 rounded">
-            <pre><code class="helm-command">{{ commands.kac }}</code></pre>
-            <button class="btn btn-secondary mt-2" onclick="copyCommand(this)">Copy Command</button>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if commands.iar %}
-    <!-- IAR Command -->
-    <div class="command-section mb-4">
-        <h3>Image Assessment at Runtime</h3>
-        <div class="bg-light p-3 rounded">
-            <pre><code class="helm-command">{{ commands.iar }}</code></pre>
-            <button class="btn btn-secondary mt-2" onclick="copyCommand(this)">Copy Command</button>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if not commands %}
-    <div class="alert alert-warning">
-        No components selected. Please select at least one component to generate commands.
-    </div>
-    {% endif %}
-
-    <a href="{{ url_for('main.index') }}" class="btn btn-primary mt-3">Back</a>
+    
+    <button onclick="window.location.href='{{ url_for('main.index') }}'" class="generate-another-button">
+        Generate Another
+    </button>
 </div>
 
-<style>
-.helm-command {
-    white-space: pre;
-    word-wrap: normal;
-    overflow-x: auto;
-    font-family: monospace;
-    padding: 15px;
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-}
-
-.command-section {
-    margin-bottom: 2rem;
-}
-
-.alert {
-    margin-top: 1rem;
-    margin-bottom: 1rem;
-}
-</style>
-
 <script>
-function copyCommand(button) {
-    // Get the command text from the pre>code element in the same command section
-    const commandElement = button.parentElement.querySelector('.helm-command');
-    const commandText = commandElement.textContent.trim();
-
-    // Copy to clipboard
-    navigator.clipboard.writeText(commandText).then(() => {
-        // Temporarily change button text to show success
-        const originalText = button.textContent;
+function copyToClipboard(button) {
+    const command = button.getAttribute('data-command');
+    navigator.clipboard.writeText(command).then(function() {
         button.textContent = 'Copied!';
-        button.classList.add('btn-success');
-        button.classList.remove('btn-secondary');
-        
-        // Reset button after 2 seconds
         setTimeout(() => {
-            button.textContent = originalText;
-            button.classList.remove('btn-success');
-            button.classList.add('btn-secondary');
+            button.textContent = 'Copy';
         }, 2000);
-    }).catch(err => {
-        console.error('Failed to copy:', err);
-        alert('Failed to copy command');
     });
 }
 </script>
