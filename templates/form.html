@@ -1,174 +1,514 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container">
-    <form method="POST" action="{{ url_for('main.generate_helm_commands') }}">
-        <!-- Deployment Selection -->
-        <div class="mb-4">
-            <h4>Select Components to Deploy:</h4>
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="deploy_sensor" name="deploy_sensor" checked>
-                <label class="form-check-label" for="deploy_sensor">
-                    Falcon Sensor
-                </label>
-            </div>
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="deploy_kac" name="deploy_kac">
-                <label class="form-check-label" for="deploy_kac">
-                    Kubernetes Admission Controller
-                </label>
-            </div>
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="deploy_iar" name="deploy_iar">
-                <label class="form-check-label" for="deploy_iar">
-                    Image Assessment at Runtime
-                </label>
-            </div>
-        </div>
+<!-- Add this near the top of your form, after the title -->
+{% if error %}
+<div class="error-alert">
+    {{ error }}
+</div>
+{% endif %}
 
-        <!-- Common Fields -->
-        <div class="mb-3">
-            <label for="client_id" class="form-label">Client ID:</label>
-            <input type="text" class="form-control" id="client_id" name="client_id" required>
+<div class="container">
+    <h2>Falcon Helm Deployment Generator</h2>
+    <form method="POST" action="{{ url_for('main.generate_helm_commands') }}" onsubmit="return validateForm()">
+        <!-- Basic Required Fields -->
+        <div class="form-group">
+            <label class="required" for="client_id">Falcon Client ID</label>
+            <input type="text" 
+                   id="client_id" 
+                   name="client_id" 
+                   pattern="[a-f0-9]{32}" 
+                   placeholder="Enter your Client ID"
+                   title="Client ID should be 32 characters long and contain only hexadecimal characters (0-9, a-f)"
+                   required>
+            <span class="input-hint">32 characters, hexadecimal only (0-9, a-f)</span>
         </div>
         
-        <div class="mb-3">
-            <label for="client_secret" class="form-label">Client Secret:</label>
-            <input type="password" class="form-control" id="client_secret" name="client_secret" required>
+        <div class="form-group">
+            <label class="required" for="client_secret">Falcon Client Secret</label>
+            <input type="password" 
+                   id="client_secret" 
+                   name="client_secret" 
+                   pattern="[A-Za-z0-9]{32,40}" 
+                   placeholder="Enter your Client Secret"
+                   title="Client Secret should be 32-40 characters long and contain only letters and numbers"
+                   required>
+            <span class="input-hint">32-40 characters, letters and numbers only</span>
         </div>
 
-        <div class="mb-3">
-            <label for="environment" class="form-label">Environment:</label>
-            <select class="form-control" id="environment" name="environment">
-                {% for env in environments %}
-                <option value="{{ env }}">{{ env }}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <!-- IAR Configuration Fields -->
-        <div id="iar-config" style="display: none;">
-            <h4 class="mt-4">IAR Configuration</h4>
-            
-            <div class="mb-3">
-                <label for="cluster_name" class="form-label">Cluster Name:</label>
-                <input type="text" class="form-control" id="cluster_name" name="cluster_name">
+        <!-- Component Selection -->
+        <div class="checkbox-group">
+            <label>Components to Deploy:</label>
+            <div class="checkbox-item">
+                <input type="checkbox" id="deploy_sensor" name="deploy_sensor" onchange="updateFormFields()">
+                <label for="deploy_sensor">Falcon Sensor (DaemonSet)</label>
             </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="deploy_container" name="deploy_container" onchange="updateFormFields()">
+                <label for="deploy_container">Falcon Container Sensor (Sidecar)</label>
+            </div>  
+            <div class="checkbox-item">
+                <input type="checkbox" id="deploy_kac" name="deploy_kac" onchange="updateFormFields()">
+                <label for="deploy_kac">Kubernetes Admission Controller</label>
+            </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="deploy_iar" name="deploy_iar" onchange="updateFormFields()">
+                <label for="deploy_iar">Image Assessment at Runtime</label>
+            </div>          
+        </div>
+        <span id="component-error" class="error-message" style="display: none;">Please select at least one component to deploy</span>
 
-            <div class="mb-3">
-                <label for="agent_region" class="form-label">Agent Region:</label>
-                <select class="form-control" id="agent_region" name="agent_region">
-                    <option value="us-1">US-1</option>
-                    <option value="us-2">US-2</option>
-                    <option value="eu-1">EU-1</option>
-                    <option value="gov-1">GOV-1</option>
+        <!-- Dynamic Fields -->
+        <div id="cluster-fields" style="display: none;">
+            <div class="form-group">
+                <label class="required" for="cluster_name">Kubernetes Cluster Name</label>
+                <input type="text" 
+                id="cluster_name" 
+                name="cluster_name" 
+                pattern="^[a-zA-Z0-9-]+$"
+                placeholder="Enter your cluster name"
+                title="Cluster name can only contain letters, numbers, and hyphens (no spaces allowed)"
+                required>
+            </div>
+        </div>
+
+        <div id="environment-field" style="display: none;">
+            <div class="form-group">
+                <label for="environment">Environment</label>
+                <select id="environment" name="environment">
+                    <option value="Standard">Standard</option>
+                    <option value="Autopilot">Autopilot</option>
                 </select>
             </div>
+        </div>
 
-            <div class="mb-3">
-                <label for="cloud_provider" class="form-label">Cloud Provider:</label>
-                <select class="form-control" id="cloud_provider" name="cloud_provider">
-                    <option value="aws">AWS</option>
-                    <option value="azure">Azure</option>
-                    <option value="gcp">GCP</option>
-                </select>
+        <div id="tags-field" class="form-group" style="display: none;">
+            <label for="tags">Tags</label>
+            <input type="text" 
+            id="tags" 
+            name="tags" 
+            pattern="^[a-zA-Z0-9-]+(,[a-zA-Z0-9-]+)*$"
+            placeholder="tag1,tag2"
+            title="Tags must be comma-separated with no spaces (example: tag1,tag2,tag3)">
+        </div>
+        <div id="advanced-indicator" class="advanced-indicator" style="display: none;">
+            <div class="indicator-content">
+                <span class="indicator-icon">⚙️</span>
+                <span>Using Custom Registry</span>
+                <a href="#" onclick="resetAdvancedConfig()" class="reset-link">Reset to Standard Configuration</a>
             </div>
         </div>
-
-        <!-- Advanced Options -->
-        <div class="mt-4">
-            <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" 
-                    data-bs-target="#advancedOptions" aria-expanded="false" 
-                    aria-controls="advancedOptions">
-                Advanced Options ▼
-            </button>
-        </div>
-
-        <div class="collapse mt-3" id="advancedOptions">
-            <div class="card card-body">
-                <h4>Custom Registry Configuration</h4>
-                
-                <!-- Common Registry Settings -->
-                <div class="mb-3">
-                    <label for="custom_registry" class="form-label">Registry URL:</label>
-                    <input type="text" class="form-control" id="custom_registry" name="custom_registry" 
-                           placeholder="e.g., registry.example.com">
-                </div>
-
-                <div class="mb-3">
-                    <label for="custom_repo" class="form-label">Repository Name:</label>
-                    <input type="text" class="form-control" id="custom_repo" name="custom_repo" 
-                           placeholder="e.g., crowdstrike">
-                </div>
-
-                <!-- Dynamic Tag Inputs -->
-                <div id="customTags">
-                    <!-- Sensor tag -->
-                    <div class="mb-3 custom-tag-input" id="sensor-tag-div" style="display: none;">
-                        <label for="sensor_tag" class="form-label">Falcon Sensor Tag:</label>
-                        <input type="text" class="form-control" id="sensor_tag" name="sensor_tag" 
-                               value="falcon-sensor">
-                    </div>
-
-                    <!-- KAC tag -->
-                    <div class="mb-3 custom-tag-input" id="kac-tag-div" style="display: none;">
-                        <label for="kac_tag" class="form-label">KAC Tag:</label>
-                        <input type="text" class="form-control" id="kac_tag" name="kac_tag" 
-                               value="falcon-kac">
-                    </div>
-
-                    <!-- IAR tag -->
-                    <div class="mb-3 custom-tag-input" id="iar-tag-div" style="display: none;">
-                        <label for="iar_tag" class="form-label">IAR Tag:</label>
-                        <input type="text" class="form-control" id="iar_tag" name="iar_tag" 
-                               value="falcon-iar">
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <button type="submit" class="btn btn-primary mt-3">Generate Commands</button>
+        
+        <button type="submit">Generate Command</button>
     </form>
+
+    <!-- Advanced Options Button -->
+    <div class="advanced-container">
+        <button id="advancedBtn" class="advanced-button" onclick="showAdvancedModal()">Advanced Options</button>
+    </div>
+    
+    <!-- Advanced Modal -->
+<div id="advancedModal" class="modal">
+    <div class="modal-content">
+        <h3>Advanced Configuration</h3>
+        <div class="info-text">
+            Using a custom registry will:
+            <ol>
+                <li>Copy Falcon images to your registry</li>
+                <li>Deploy components using your registry</li>
+            </ol>
+        </div>
+        
+        <div class="form-group">
+            <label for="custom_registry">Custom Registry URL</label>
+            <input type="text" 
+            id="custom_registry" 
+            name="custom_registry" 
+            pattern="^[A-Za-z0-9-./:]+$"
+            placeholder="e.g., registry.example.com/falcon"
+            title="Registry URL cannot contain spaces">
+        </div>
+
+        <div class="modal-buttons">
+            <button onclick="applyAdvancedConfig()" class="apply-button">Apply Configuration</button>
+            <button onclick="closeAdvancedModal()" class="cancel-button">Cancel</button>
+            <button onclick="resetAdvancedConfig()" class="reset-button">Reset to Standard</button>
+        </div>
+    </div>
+</div>
+        
+    <!-- Uninstall Button -->
+    <div class="uninstall-container">
+        <button id="uninstallBtn" class="uninstall-button" onclick="showUninstallConfirm()">Uninstall Falcon</button>
+    </div>
+
+    <!-- Uninstall Modal -->
+    <div id="uninstallModal" class="modal">
+        <div class="modal-content">
+            <h3>Uninstall Falcon Components</h3>
+            <p>This will remove all Falcon components from your cluster. Are you sure?</p>
+            <div class="modal-buttons">
+                <button onclick="generateUninstallCommand()" class="danger-button">Yes, Uninstall</button>
+                <button onclick="closeModal()" class="cancel-button">Cancel</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // IAR Configuration Toggle
-    const iarCheckbox = document.getElementById('deploy_iar');
-    const iarConfig = document.getElementById('iar-config');
-    const iarFields = iarConfig.querySelectorAll('input, select');
+    updateFormFields();
+
+    // Add validation to specific fields
+    const fieldsToValidate = ['cluster_name', 'tags', 'custom_registry'];
+    fieldsToValidate.forEach(fieldId => {
+        const input = document.getElementById(fieldId);
+        if (input) {
+            input.addEventListener('input', function() {
+                validateInput(this);
+            });
+            input.addEventListener('blur', function() {
+                validateInput(this);
+            });
+        }
+    });
+
+    // Sensor mutual exclusivity logic
+    const deploySensor = document.getElementById('deploy_sensor');
+    const deployContainer = document.getElementById('deploy_container');
     
-    function toggleIarConfig() {
-        const isIarSelected = iarCheckbox.checked;
-        iarConfig.style.display = isIarSelected ? 'block' : 'none';
-        iarFields.forEach(field => {
-            field.required = isIarSelected;
-        });
+    // Function to handle warning message
+    function showWarningMessage(targetElement, message) {
+    const existingWarning = document.getElementById('sensor-warning');
+    if (existingWarning) {
+        existingWarning.remove();
     }
     
-    iarCheckbox.addEventListener('change', toggleIarConfig);
-    toggleIarConfig();
-
-    // Custom Tags Toggle
-    const sensorCheckbox = document.getElementById('deploy_sensor');
-    const kacCheckbox = document.getElementById('deploy_kac');
+    const warning = document.createElement('div');
+    warning.id = 'sensor-warning';
+    warning.className = 'warning-message';
+    warning.textContent = message;
     
-    const sensorTagDiv = document.getElementById('sensor-tag-div');
-    const kacTagDiv = document.getElementById('kac-tag-div');
-    const iarTagDiv = document.getElementById('iar-tag-div');
-
-    function updateTagInputs() {
-        sensorTagDiv.style.display = sensorCheckbox.checked ? 'block' : 'none';
-        kacTagDiv.style.display = kacCheckbox.checked ? 'block' : 'none';
-        iarTagDiv.style.display = iarCheckbox.checked ? 'block' : 'none';
+    // Insert the warning message in the checkbox-item div
+    targetElement.closest('.checkbox-item').appendChild(warning);
     }
 
-    // Add event listeners for component checkboxes
-    sensorCheckbox.addEventListener('change', updateTagInputs);
-    kacCheckbox.addEventListener('change', updateTagInputs);
-    iarCheckbox.addEventListener('change', updateTagInputs);
+    // Function to disable a sensor option
+    function disableSensor(sensorElement, message) {
+        sensorElement.checked = false;
+        sensorElement.disabled = true;
+        sensorElement.parentElement.classList.add('disabled');
+        showWarningMessage(sensorElement, message);
+    }
 
-    // Initial state
-    updateTagInputs();
+    // Function to enable a sensor option
+    function enableSensor(sensorElement) {
+        sensorElement.disabled = false;
+        sensorElement.parentElement.classList.remove('disabled');
+        const warning = document.getElementById('sensor-warning');
+        if (warning) {
+            warning.remove();
+        }
+    }
+
+    // Add click event listeners to prevent checking when disabled
+    deploySensor.addEventListener('click', function(event) {
+        if (this.disabled || deployContainer.checked) {
+            event.preventDefault();
+            disableSensor(deploySensor, 'DaemonSet Sensor cannot be deployed with Container Sensor');
+            return false;
+        }
+    });
+
+    deployContainer.addEventListener('click', function(event) {
+        if (this.disabled || deploySensor.checked) {
+            event.preventDefault();
+            disableSensor(deployContainer, 'Container Sensor cannot be deployed with Falcon Sensor');
+            return false;
+        }
+    });
+
+    // Add change event listeners for when checkboxes are toggled
+    deploySensor.addEventListener('change', function() {
+        if (this.checked) {
+            disableSensor(deployContainer, 'Container Sensor cannot be deployed with Falcon Sensor');
+        } else {
+            enableSensor(deployContainer);
+        }
+        updateFormFields();
+    });
+
+    deployContainer.addEventListener('change', function() {
+        if (this.checked) {
+            disableSensor(deploySensor, 'DaemonSet Sensor cannot be deployed with Container Sensor');
+        } else {
+            enableSensor(deploySensor);
+        }
+        updateFormFields();
+    });
 });
+
+
+function validateForm() {
+    const sensor = document.getElementById('deploy_sensor').checked;
+    const kac = document.getElementById('deploy_kac').checked;
+    const iar = document.getElementById('deploy_iar').checked;
+    const container = document.getElementById('deploy_container').checked;  // Add this line
+    const errorMessage = document.getElementById('component-error');
+    
+    if (!sensor && !kac && !iar && !container) {  // Add container to check
+        errorMessage.style.display = 'block';
+        return false;
+    }
+    
+    errorMessage.style.display = 'none';
+
+    // Validate all fields before submission
+    const fieldsToValidate = ['cluster_name', 'tags', 'custom_registry'];
+    let isValid = true;
+    
+    fieldsToValidate.forEach(fieldId => {
+        const input = document.getElementById(fieldId);
+        if (input && input.style.display !== 'none' && input.value) {
+            if (!validateInput(input)) {
+                isValid = false;
+            }
+        }
+    });
+
+    return isValid;
+}
+
+function validateInput(input) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'field-error';
+    errorDiv.style.color = 'var(--cs-red)';
+    errorDiv.style.fontSize = '0.8rem';
+    errorDiv.style.marginTop = '0.25rem';
+
+    // Remove any existing error message
+    const existingError = input.parentNode.querySelector('.field-error');
+    if (existingError) {
+        existingError.remove();
+    }
+
+    // Check for spaces
+    if (input.value.includes(' ')) {
+        errorDiv.textContent = 'Spaces are not allowed in this field';
+        input.parentNode.appendChild(errorDiv);
+        return false;
+    }
+
+    // Check pattern validation
+    if (input.pattern && !new RegExp(input.pattern).test(input.value)) {
+        errorDiv.textContent = input.title || 'Invalid format';
+        input.parentNode.appendChild(errorDiv);
+        return false;
+    }
+
+    return true;
+}
+
+function updateFormFields() {
+    const deployIAR = document.getElementById('deploy_iar').checked;
+    const deployKAC = document.getElementById('deploy_kac').checked;
+    const deploySensor = document.getElementById('deploy_sensor').checked;
+    const deployContainer = document.getElementById('deploy_container').checked;
+    const clusterFields = document.getElementById('cluster-fields');
+    const environmentField = document.getElementById('environment-field');
+    const tagsField = document.getElementById('tags-field');
+    const clusterName = document.getElementById('cluster_name');
+
+    // Show/hide cluster fields based on KAC or IAR selection
+    if (deployIAR || deployKAC) {
+        clusterFields.style.display = 'block';
+        clusterName.required = true;
+    } else {
+        clusterFields.style.display = 'none';
+        clusterName.required = false;
+    }
+
+    // Show/hide environment field based on Falcon Sensor selection
+    environmentField.style.display = deploySensor ? 'block' : 'none';
+
+    // Show/hide tags field based on Sensor, KAC, or Container selection
+    tagsField.style.display = (deploySensor || deployKAC || deployContainer) ? 'block' : 'none';
+
+    // Handle error message visibility
+    const errorMessage = document.getElementById('component-error');
+    if (deployIAR || deployKAC || deploySensor || deployContainer) {
+        errorMessage.style.display = 'none';
+    }
+}
+
+// Advanced Modal Functions
+function showAdvancedModal() {
+    document.getElementById('advancedModal').style.display = 'flex';
+}
+
+function closeAdvancedModal() {
+    document.getElementById('advancedModal').style.display = 'none';
+}
+
+function updateImageTags() {
+    const registry = document.getElementById('custom_registry').value;
+    if (registry) {
+        document.querySelector('.copy-commands').style.display = 'block';
+        updateCopyCommands();
+    } else {
+        document.querySelector('.copy-commands').style.display = 'none';
+    }
+}
+
+function updateCopyCommands() {
+    const registry = document.getElementById('custom_registry').value;
+    const sensorTag = document.getElementById('sensor_tag').value;
+    const kacTag = document.getElementById('kac_tag').value;
+    const iarTag = document.getElementById('iar_tag').value;
+
+    const commands = `# Copy Falcon Sensor
+curl https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh | bash -s -- --copy ${registry} --copy-omit-image-name --copy-custom-tag ${sensorTag}
+
+# Copy KAC
+curl https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh | bash -s -- --copy ${registry} --copy-omit-image-name --copy-custom-tag ${kacTag}
+
+# Copy IAR
+curl https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh | bash -s -- --copy ${registry} --copy-omit-image-name --copy-custom-tag ${iarTag}`;
+
+    document.getElementById('copyCommands').textContent = commands;
+}
+
+function copyCommands() {
+    const commands = document.getElementById('copyCommands').textContent;
+    navigator.clipboard.writeText(commands);
+    
+    const copyButton = document.querySelector('.copy-button');
+    copyButton.textContent = 'Copied!';
+    setTimeout(() => {
+        copyButton.textContent = 'Copy Commands';
+    }, 2000);
+}
+
+function applyAdvancedConfig() {
+    const registry = document.getElementById('custom_registry').value;
+    if (registry) {
+        // Add custom registry value and default tags to main form
+        const mainForm = document.querySelector('form');
+        
+        // Add custom registry input
+        let registryInput = document.getElementById('custom_registry_input');
+        if (!registryInput) {
+            registryInput = document.createElement('input');
+            registryInput.type = 'hidden';
+            registryInput.id = 'custom_registry_input';
+            registryInput.name = 'custom_registry';
+            mainForm.appendChild(registryInput);
+        }
+        registryInput.value = registry;
+
+        // Add sensor tag
+        let sensorTagInput = document.getElementById('sensor_tag_input');
+        if (!sensorTagInput) {
+            sensorTagInput = document.createElement('input');
+            sensorTagInput.type = 'hidden';
+            sensorTagInput.id = 'sensor_tag_input';
+            sensorTagInput.name = 'sensor_tag';
+            mainForm.appendChild(sensorTagInput);
+        }
+        sensorTagInput.value = 'falcon-sensor';
+
+        // Add KAC tag
+        let kacTagInput = document.getElementById('kac_tag_input');
+        if (!kacTagInput) {
+            kacTagInput = document.createElement('input');
+            kacTagInput.type = 'hidden';
+            kacTagInput.id = 'kac_tag_input';
+            kacTagInput.name = 'kac_tag';
+            mainForm.appendChild(kacTagInput);
+        }
+        kacTagInput.value = 'falcon-kac';
+
+        // Add IAR tag
+        let iarTagInput = document.getElementById('iar_tag_input');
+        if (!iarTagInput) {
+            iarTagInput = document.createElement('input');
+            iarTagInput.type = 'hidden';
+            iarTagInput.id = 'iar_tag_input';
+            iarTagInput.name = 'iar_tag';
+            mainForm.appendChild(iarTagInput);
+        }
+        iarTagInput.value = 'falcon-imageanalyzer';
+
+        // Show indicator
+        document.getElementById('advanced-indicator').style.display = 'flex';
+    }
+    closeAdvancedModal();
+}
+
+function resetAdvancedConfig() {
+    // Remove all custom inputs
+    const inputsToRemove = [
+        'custom_registry_input',
+        'sensor_tag_input',
+        'kac_tag_input',
+        'iar_tag_input'
+    ];
+    
+    inputsToRemove.forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.remove();
+        }
+    });
+    
+    // Clear the custom registry field
+    document.getElementById('custom_registry').value = '';
+    
+    // Hide indicator
+    document.getElementById('advanced-indicator').style.display = 'none';
+    
+    // Close modal if open
+    closeAdvancedModal();
+    
+    // Optional: reload page
+    window.location.reload();
+}
+
+// Uninstall Modal Functions
+function showUninstallConfirm() {
+    document.getElementById('uninstallModal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('uninstallModal').style.display = 'none';
+}
+
+function generateUninstallCommand() {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = "{{ url_for('main.generate_helm_commands') }}";
+    
+    // Change this to use the uninstall flag instead of skip flags
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'uninstall';
+    input.value = 'true';
+    
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Combined modal click-outside handler
+window.onclick = function(event) {
+    const advancedModal = document.getElementById('advancedModal');
+    const uninstallModal = document.getElementById('uninstallModal');
+    
+    if (event.target == advancedModal) {
+        closeAdvancedModal();
+    }
+    if (event.target == uninstallModal) {
+        closeModal();
+    }
+}
 </script>
 {% endblock %}
